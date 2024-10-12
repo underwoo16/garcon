@@ -51,6 +51,8 @@ func (r *Response) WriteTo(conn net.Conn, request *Request) error {
 		}
 		r.SetHeader("Content-Length", fmt.Sprintf("%d", len(b.Bytes())))
 		r.SetBody(b.Bytes())
+	} else {
+		r.SetHeader("Content-Length", fmt.Sprintf("%d", len(r.Body)))
 	}
 
 	for key, value := range r.Headers {

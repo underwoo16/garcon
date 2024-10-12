@@ -12,13 +12,14 @@ import (
 var directory = "."
 
 func main() {
-	// parse --directory flag
+	// TODO: parse command line arguments robustly
 	if len(os.Args) > 1 {
 		if os.Args[1] == "--directory" {
 			directory = os.Args[2]
 		}
 	}
 
+	// TODO: set port from command line arguments
 	l, err := net.Listen("tcp", "0.0.0.0:4221")
 	if err != nil {
 		fmt.Println("Failed to bind to port 4221")
@@ -27,6 +28,7 @@ func main() {
 	defer l.Close()
 
 	for {
+		// TODO: pool connections
 		conn, err := l.Accept()
 		if err != nil {
 			fmt.Println("Error accepting connection: ", err.Error())
@@ -40,6 +42,7 @@ func main() {
 func handleRequest(conn net.Conn) {
 	defer conn.Close()
 
+	// TODO: handle arbitary length requests
 	b := make([]byte, 1024)
 	_, err := conn.Read(b)
 	if err != nil {
@@ -82,20 +85,14 @@ func handleGetRequest(conn net.Conn, request *internal.Request) {
 		Body:        []byte{},
 	}
 
-	if strings.HasPrefix(request.Path, "/echo/") {
-		echo := strings.TrimPrefix(request.Path, "/echo/")
-		length := len(echo)
-		response.SetHeader("Content-Type", "text/plain")
-		response.SetHeader("Content-Length", fmt.Sprintf("%d", length))
-		response.SetBody([]byte(echo))
-	} else if request.Path == "/user-agent" {
-		length := len(request.Headers["User-Agent"])
-		response.SetHeader("Content-Type", "text/plain")
-		response.SetHeader("Content-Length", fmt.Sprintf("%d", length))
-		response.SetBody([]byte(request.Headers["User-Agent"]))
-	} else if strings.HasPrefix(request.Path, "/files/") {
-		response = serveFile(request.Path, response)
-	} else if request.Path != "/" {
+	// TODO: add _ping route
+	// TODO: add _status route
+	// TODO: serve index.html for /
+	switch {
+	case request.Path == "/_ping":
+		response.SetStatus("200 OK")
+		response.SetBody([]byte("pong"))
+	default:
 		response.SetStatus("404 Not Found")
 	}
 
@@ -105,34 +102,14 @@ func handleGetRequest(conn net.Conn, request *internal.Request) {
 	}
 }
 
+// TODO: we probably don't want this to arbitrarily write files to disk
 func handlePostRequest(conn net.Conn, request *internal.Request) {
 	defer conn.Close()
 	response := internal.Response{
 		HttpVersion: request.HttpVersion,
-	}
-
-	if strings.HasPrefix(request.Path, "/files/") {
-		filePath := strings.TrimPrefix(request.Path, "/files/")
-		filePath = fmt.Sprintf("%s/%s", directory, filePath)
-
-		file, err := os.Create(filePath)
-
-		if err != nil {
-			fmt.Println("Error creating file: ", err.Error())
-			response.SetStatus("500 Internal Server Error")
-		} else {
-			_, err = file.Write(request.Body)
-			if err != nil {
-				fmt.Println("Error writing to file: ", err.Error())
-				response.SetStatus("500 Internal Server Error")
-			} else {
-				response.SetStatus("201 Created")
-			}
-			file.Sync()
-			file.Close()
-		}
-	} else {
-		response.SetStatus("404 Not Found")
+		Status:      "200 OK",
+		Headers:     make(map[string]string),
+		Body:        []byte{},
 	}
 
 	err := response.WriteTo(conn, request)
@@ -141,6 +118,8 @@ func handlePostRequest(conn net.Conn, request *internal.Request) {
 	}
 }
 
+// TODO: handle file paths robustly
+// TODO: handle content types
 func serveFile(path string, response internal.Response) internal.Response {
 	filePath := strings.TrimPrefix(path, "/files/")
 	filePath = fmt.Sprintf("%s/%s", directory, filePath)
