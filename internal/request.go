@@ -12,6 +12,7 @@ type Request struct {
 
 var crlf = []byte("\r\n")
 
+// TODO: return error if request is malformed
 func ParseRequest(b []byte) *Request {
 	requestBytes := bytes.Split(b, []byte("\r\n\r\n"))
 	statusAndHeaders := requestBytes[0]

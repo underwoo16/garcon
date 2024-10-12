@@ -50,6 +50,7 @@ func handleRequest(conn net.Conn) {
 		os.Exit(1)
 	}
 
+	// TODO: handle request parsing errors
 	request := internal.ParseRequest(b)
 	fmt.Printf("Method: %s\n", request.Method)
 	fmt.Printf("Path: %s\n", request.Path)
