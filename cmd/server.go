@@ -1,16 +1,15 @@
 package main
 
 import (
-	"bytes"
-	"compress/gzip"
 	"fmt"
 	"net"
 	"os"
 	"strings"
+
+	"github.com/underwoo16/garcon/internal"
 )
 
 var directory = "."
-var crlf = []byte("\r\n")
 
 func main() {
 	// parse --directory flag
@@ -48,12 +47,12 @@ func handleRequest(conn net.Conn) {
 		os.Exit(1)
 	}
 
-	request := parseRequest(b)
-	fmt.Printf("Method: %s", request.Method)
-	fmt.Printf("Path: %s", request.Path)
-	fmt.Printf("HttpVersion: %s", request.HttpVersion)
-	fmt.Printf("Headers: %s", request.Headers)
-	fmt.Printf("Body: %s", request.Body)
+	request := internal.ParseRequest(b)
+	fmt.Printf("Method: %s\n", request.Method)
+	fmt.Printf("Path: %s\n", request.Path)
+	fmt.Printf("HttpVersion: %s\n", request.HttpVersion)
+	fmt.Printf("Headers: %s\n", request.Headers)
+	fmt.Printf("Body: %s\n", request.Body)
 
 	switch request.Method {
 	case "GET":
@@ -61,17 +60,22 @@ func handleRequest(conn net.Conn) {
 	case "POST":
 		handlePostRequest(conn, request)
 	default:
-		response := "HTTP/1.1 405 Method Not Allowed\r\n\r\n"
-		_, err = conn.Write([]byte(response))
+		response := internal.Response{
+			HttpVersion: request.HttpVersion,
+			Status:      "405 Method Not Allowed",
+			Headers:     make(map[string]string),
+			Body:        []byte{},
+		}
+		err := response.WriteTo(conn, request)
 		if err != nil {
 			fmt.Println("Error writing: ", err.Error())
 		}
 	}
 }
 
-func handleGetRequest(conn net.Conn, request *Request) {
+func handleGetRequest(conn net.Conn, request *internal.Request) {
 	defer conn.Close()
-	response := Response{
+	response := internal.Response{
 		HttpVersion: request.HttpVersion,
 		Status:      "200 OK",
 		Headers:     make(map[string]string),
@@ -101,9 +105,9 @@ func handleGetRequest(conn net.Conn, request *Request) {
 	}
 }
 
-func handlePostRequest(conn net.Conn, request *Request) {
+func handlePostRequest(conn net.Conn, request *internal.Request) {
 	defer conn.Close()
-	response := Response{
+	response := internal.Response{
 		HttpVersion: request.HttpVersion,
 	}
 
@@ -137,43 +141,7 @@ func handlePostRequest(conn net.Conn, request *Request) {
 	}
 }
 
-type Request struct {
-	Method      string
-	Path        string
-	HttpVersion string
-	Headers     map[string]string
-	Body        []byte
-}
-
-func parseRequest(b []byte) *Request {
-	requestBytes := bytes.Split(b, []byte("\r\n\r\n"))
-	statusAndHeaders := requestBytes[0]
-	statusLine := bytes.Split(statusAndHeaders, []byte(crlf))[0]
-	statusLineParts := bytes.Split(statusLine, []byte(" "))
-	method := string(statusLineParts[0])
-	path := string(statusLineParts[1])
-	httpVersion := string(statusLineParts[2])
-	headers := bytes.Split(statusAndHeaders, []byte(crlf))[1:]
-	body := requestBytes[1]
-	body = bytes.Trim(body, "\x00")
-
-	headersMap := make(map[string]string)
-	for _, header := range headers {
-		headerParts := bytes.Split(header, []byte(": "))
-		headersMap[string(headerParts[0])] = string(headerParts[1])
-	}
-	request := Request{
-		Method:      method,
-		Path:        path,
-		HttpVersion: httpVersion,
-		Headers:     headersMap,
-		Body:        body,
-	}
-
-	return &request
-}
-
-func serveFile(path string, response Response) Response {
+func serveFile(path string, response internal.Response) internal.Response {
 	filePath := strings.TrimPrefix(path, "/files/")
 	filePath = fmt.Sprintf("%s/%s", directory, filePath)
 
@@ -217,69 +185,4 @@ func serveFile(path string, response Response) Response {
 	response.SetBody(fileContents)
 
 	return response
-}
-
-type Response struct {
-	HttpVersion string
-	Status      string
-	Headers     map[string]string
-	Body        []byte
-}
-
-// set status code and message
-func (r *Response) SetStatus(status string) {
-	r.Status = status
-}
-
-// set a header
-func (r *Response) SetHeader(key string, value string) {
-	r.Headers[key] = value
-}
-
-// set the body
-func (r *Response) SetBody(body []byte) {
-	r.Body = body
-}
-
-func (r *Response) WriteTo(conn net.Conn, request *Request) error {
-	_, err := conn.Write([]byte(r.HttpVersion + " " + r.Status + "\r\n"))
-	if err != nil {
-		return err
-	}
-
-	if strings.Contains(request.Headers["Accept-Encoding"], "gzip") {
-		r.SetHeader("Content-Encoding", "gzip")
-
-		var b bytes.Buffer
-		gz := gzip.NewWriter(&b)
-		_, err := gz.Write(r.Body)
-		if err != nil {
-			return err
-		}
-		err = gz.Close()
-		if err != nil {
-			return err
-		}
-		r.SetHeader("Content-Length", fmt.Sprintf("%d", len(b.Bytes())))
-		r.SetBody(b.Bytes())
-	}
-
-	for key, value := range r.Headers {
-		_, err := conn.Write([]byte(key + ": " + value + "\r\n"))
-		if err != nil {
-			return err
-		}
-	}
-
-	_, err = conn.Write([]byte("\r\n"))
-	if err != nil {
-		return err
-	}
-
-	_, err = conn.Write(r.Body)
-	if err != nil {
-		return err
-	}
-
-	return nil
 }

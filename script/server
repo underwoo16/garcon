@@ -3,7 +3,7 @@
 set -e # Exit early if any commands fail
 (
   cd "$(dirname "$0")"
-  go build -o /tmp/garcon ../app/*.go
+  go build -o /tmp/garcon ../cmd/*.go
 )
 
 exec /tmp/garcon "$@"
