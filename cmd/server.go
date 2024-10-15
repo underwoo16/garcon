@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/underwoo16/garcon/internal"
 )
 
-var directory = "."
+var directory = ""
 
 func main() {
 	// TODO: parse command line arguments robustly
@@ -32,6 +33,7 @@ func main() {
 		conn, err := l.Accept()
 		if err != nil {
 			fmt.Println("Error accepting connection: ", err.Error())
+			// TODO: just log the error and continue
 			os.Exit(1)
 		}
 
@@ -43,20 +45,26 @@ func handleRequest(conn net.Conn) {
 	defer conn.Close()
 
 	// TODO: handle arbitary length requests
-	b := make([]byte, 1024)
+	b := make([]byte, 2048)
 	_, err := conn.Read(b)
 	if err != nil {
 		fmt.Println("Error reading: ", err.Error())
+		// TODO: return 500 server error?
 		os.Exit(1)
 	}
 
-	// TODO: handle request parsing errors
 	request := internal.ParseRequest(b)
+	if request == nil {
+		fmt.Println("Error parsing request")
+		// TODO: return request malformed response
+		return
+	}
+
 	fmt.Printf("Method: %s\n", request.Method)
 	fmt.Printf("Path: %s\n", request.Path)
 	fmt.Printf("HttpVersion: %s\n", request.HttpVersion)
 	fmt.Printf("Headers: %s\n", request.Headers)
-	fmt.Printf("Body: %s\n", request.Body)
+	fmt.Printf("Body: %s\n\n", request.Body)
 
 	switch request.Method {
 	case "GET":
@@ -86,13 +94,12 @@ func handleGetRequest(conn net.Conn, request *internal.Request) {
 		Body:        []byte{},
 	}
 
-	// TODO: add _ping route
-	// TODO: add _status route
-	// TODO: serve index.html for /
 	switch {
 	case request.Path == "/_ping":
 		response.SetStatus("200 OK")
 		response.SetBody([]byte("pong"))
+	case directory != "":
+		response = serveFile(request, response)
 	default:
 		response.SetStatus("404 Not Found")
 	}
@@ -103,12 +110,11 @@ func handleGetRequest(conn net.Conn, request *internal.Request) {
 	}
 }
 
-// TODO: we probably don't want this to arbitrarily write files to disk
 func handlePostRequest(conn net.Conn, request *internal.Request) {
 	defer conn.Close()
 	response := internal.Response{
 		HttpVersion: request.HttpVersion,
-		Status:      "200 OK",
+		Status:      "404 Not Found",
 		Headers:     make(map[string]string),
 		Body:        []byte{},
 	}
@@ -119,11 +125,14 @@ func handlePostRequest(conn net.Conn, request *internal.Request) {
 	}
 }
 
-// TODO: handle file paths robustly
-// TODO: handle content types
-func serveFile(path string, response internal.Response) internal.Response {
-	filePath := strings.TrimPrefix(path, "/files/")
-	filePath = fmt.Sprintf("%s/%s", directory, filePath)
+func serveFile(request *internal.Request, response internal.Response) internal.Response {
+	path := request.Path
+	if path == "/" {
+		path = "/index.html"
+	}
+
+	filePath := strings.TrimPrefix(path, "/")
+	filePath = filepath.Join(directory, filePath)
 
 	_, err := os.Stat(filePath)
 	if err != nil {
@@ -146,20 +155,19 @@ func serveFile(path string, response internal.Response) internal.Response {
 		return response
 	}
 
-	contentType := "application/octet-stream"
 	contentLength := fileInfo.Size()
-
 	fileContents := make([]byte, contentLength)
+
 	_, err = file.Read(fileContents)
 	if err != nil {
 		fmt.Println("Error reading file: ", err.Error())
-		// return "HTTP/1.1 404 Not Found\r\n\r\n"
 		response.SetStatus("404 Not Found")
 		return response
 	}
 	file.Close()
 
 	response.SetStatus("200 OK")
+	contentType := "text/html"
 	response.SetHeader("Content-Type", contentType)
 	response.SetHeader("Content-Length", fmt.Sprintf("%d", contentLength))
 	response.SetBody(fileContents)
